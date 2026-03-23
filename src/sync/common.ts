@@ -129,10 +129,16 @@ export async function createTabsForPlatforms(data: SyncData) {
         for (const url of extraConfig.customInjectUrls) {
           tab = await chrome.tabs.create({ url });
           info.injectUrl = url;
-          // 等待标签页加载完成
+          // 等待标签页加载完成，增加超时机制
           await new Promise<void>((resolve) => {
+            const timeout = setTimeout(() => {
+              console.warn(`Tab ${tab?.id} loading timed out after 30s`);
+              resolve();
+            }, 30000);
+
             chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
               if (tabId === tab!.id && info.status === "complete") {
+                clearTimeout(timeout);
                 chrome.tabs.onUpdated.removeListener(listener);
                 resolve();
               }
@@ -168,10 +174,16 @@ export async function createTabsForPlatforms(data: SyncData) {
             // 将新标签页添加到现有组中
             await chrome.tabs.group({ tabIds: [tab.id!], groupId });
           }
-          // 等待3秒再继续
+          // 等待3秒再继续，增加超时机制
           await new Promise<void>((resolve) => {
+            const timeout = setTimeout(() => {
+              console.warn(`Tab ${tab?.id} loading timed out after 30s`);
+              resolve();
+            }, 30000);
+
             chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
               if (tabId === tab!.id && info.status === "complete") {
+                clearTimeout(timeout);
                 chrome.tabs.onUpdated.removeListener(listener);
                 resolve();
               }

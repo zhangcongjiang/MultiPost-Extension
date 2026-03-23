@@ -43,6 +43,40 @@ export async function VideoDouyin(data: SyncData) {
     });
   }
 
+  // ===== 新增工具函数 =====
+  function moveCursorToEnd(el: HTMLElement) {
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    const selection = window.getSelection();
+    if (selection) {
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  }
+
+  function pasteText(el: HTMLElement, text: string) {
+    const event = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: new DataTransfer(),
+    });
+
+    event.clipboardData!.setData("text/plain", text);
+    el.dispatchEvent(event);
+  }
+
+  function insertEnter(el: HTMLElement) {
+    const event = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "Enter",
+      code: "Enter",
+    });
+    el.dispatchEvent(event);
+  }
+
   async function uploadVideo(file: File): Promise<void> {
     const fileInput = (await waitForElement("input[type=file]")) as HTMLInputElement;
 
@@ -62,7 +96,7 @@ export async function VideoDouyin(data: SyncData) {
     console.log("视频上传事件已触发");
   }
 
-  async function uploadCover(cover: FileData): Promise<void> {
+  async function uploadCover(cover: FileData, verticalCover: FileData): Promise<void> {
     console.log("尝试上传封面", cover);
     const coverUploadContainer = await waitForElement("div.content-upload-new");
     console.log("封面上传容器", coverUploadContainer);
@@ -98,20 +132,65 @@ export async function VideoDouyin(data: SyncData) {
     const inputEvent = new Event("input", { bubbles: true });
     fileInput.dispatchEvent(inputEvent);
 
-    console.log("封面文件上传操作已触发");
+    console.log("竖版封面文件上传操作已触发");
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
+    const verticalButtons = document.querySelectorAll("button.semi-button.semi-button-primary.semi-button-light");
+    console.log("完成按钮列表", verticalButtons);
+    const verticalButton = Array.from(verticalButtons).find((button) => button.textContent === "设置横封面");
+    console.log("设置横版封面按钮", verticalButton);
+    if (verticalButton) {
+      (verticalButton as HTMLElement).click();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    const uploadBlocks = Array.from(document.querySelectorAll("div.container-XzaV9h"));
+
+    const horizontalBlock = uploadBlocks.find((el) => el.textContent?.includes("上传封面"));
+
+    if (!horizontalBlock) {
+      console.log("没找到横版上传区域");
+      return;
+    }
+
+    const verticalFileInput = horizontalBlock.querySelector(
+      'input[type="file"].semi-upload-hidden-input',
+    ) as HTMLInputElement;
+
+    console.log("横版真实 input:", verticalFileInput);
+
+    if (!verticalFileInput) return;
+
+    // === 构造文件 ===
+    const verticalResponse = await fetch(verticalCover.url);
+    const verticalArrayBuffer = await verticalResponse.arrayBuffer();
+    const verticalImageFile = new File([verticalArrayBuffer], verticalCover.name, { type: verticalCover.type });
+
+    const dt = new DataTransfer();
+    dt.items.add(verticalImageFile);
+
+    verticalFileInput.files = dt.files;
+
+    // 🔥 关键触发链
+    verticalFileInput.dispatchEvent(new Event("input", { bubbles: true }));
+    verticalFileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    verticalFileInput.click();
+
+    console.log("横版封面上传触发完成");
     await new Promise((resolve) => setTimeout(resolve, 3000));
 
     const doneButtons = document.querySelectorAll("button.semi-button.semi-button-primary.semi-button-light");
     console.log("完成按钮列表", doneButtons);
     const doneButton = Array.from(doneButtons).find((button) => button.textContent === "完成");
-    console.log("完成按钮", doneButton);
+    console.log("完成", doneButton);
     if (doneButton) {
       (doneButton as HTMLElement).click();
     }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 
   try {
-    const { content, video, title, tags, cover, scheduledPublishTime } = data.data as VideoData;
+    const { content, video, title, tags, cover, verticalCover, scheduledPublishTime } = data.data as VideoData;
     // 处理视频上传
     if (video) {
       const response = await fetch(video.url);
@@ -137,35 +216,32 @@ export async function VideoDouyin(data: SyncData) {
     const contentEditor = (await waitForElement(
       'div.zone-container.editor-kit-container.editor.editor-comp-publish[contenteditable="true"]',
     )) as HTMLDivElement;
+
     if (contentEditor) {
-      // 填写描述内容
-      contentEditor.focus();
-      const contentPasteEvent = new ClipboardEvent("paste", {
-        bubbles: true,
-        cancelable: true,
-        clipboardData: new DataTransfer(),
-      });
+      // ===== 写内容 =====
+      moveCursorToEnd(contentEditor);
 
-      contentPasteEvent.clipboardData.setData("text/plain", `${content} `);
-      contentEditor.dispatchEvent(contentPasteEvent);
+      pasteText(contentEditor, `${content}\n`);
 
-      // 处理标签
+      // 等待编辑器稳定（很关键）
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // ===== 写标签 =====
       if (tags && tags.length > 0) {
         const tagsToSync = tags.slice(0, 5);
+
         for (const tag of tagsToSync) {
           console.log("添加标签:", tag);
-          contentEditor.focus();
 
-          const pasteEvent = new ClipboardEvent("paste", {
-            bubbles: true,
-            cancelable: true,
-            clipboardData: new DataTransfer(),
-          });
+          // ⚠️ 每次都重新锁光标（关键）
+          moveCursorToEnd(contentEditor);
 
-          pasteEvent.clipboardData.setData("text/plain", ` #${tag}`);
-          contentEditor.dispatchEvent(pasteEvent);
+          pasteText(contentEditor, `#${tag}`);
+          // 停顿 0.5 秒
+          await new Promise((resolve) => setTimeout(resolve, 200));
 
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+          // 插入换行（你要的 enter）
+          insertEnter(contentEditor);
         }
       }
     }
@@ -173,7 +249,7 @@ export async function VideoDouyin(data: SyncData) {
     // 处理封面上传
     if (cover) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
-      await uploadCover(cover);
+      await uploadCover(cover, verticalCover);
     }
 
     // 处理定时发布

@@ -71,7 +71,7 @@ export default function Publish() {
   const [autoCloseDelay, setAutoCloseDelay] = useState<number>(DEFAULT_AUTO_CLOSE_DELAY);
   const autoCloseTimerRef = useRef<number>();
   const countdownTimerRef = useRef<number>();
-  const sysnCloseTabsRef = useRef<boolean>(false);
+  const syncCloseTabsRef = useRef<boolean>(false);
   const publishedTabsRef = useRef<
     Array<{
       tab: chrome.tabs.Tab;
@@ -410,7 +410,10 @@ export default function Publish() {
 
     // 自动关闭定时器
     autoCloseTimerRef.current = window.setTimeout(async () => {
-      if (sysnCloseTabsRef.current) {
+      // 如果是发布过程中的超时自动关闭（比如用户没操作），才考虑 syncCloseTabs
+      // 但如果是发布成功后的自动关闭，通常我们希望保留标签页
+      // 这里是通用的自动关闭定时器，所以如果用户开启了 syncCloseTabs，它会关闭标签页
+      if (syncCloseTabsRef.current) {
         await handleCloseAllTabs();
       }
       window.close();
@@ -430,7 +433,7 @@ export default function Publish() {
   const handleSyncCloseTabsChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const checked = event.target.checked;
     setSyncCloseTabs(checked);
-    sysnCloseTabsRef.current = checked;
+    syncCloseTabsRef.current = checked;
     await storage.set(SYNC_CLOSE_TABS_KEY, String(checked));
   };
 
@@ -469,7 +472,7 @@ export default function Publish() {
       setAutoClose(shouldAutoClose);
       setAutoCloseDelay(delaySeconds);
       setSyncCloseTabs(shouldSyncCloseTabs);
-      sysnCloseTabsRef.current = shouldSyncCloseTabs;
+      syncCloseTabsRef.current = shouldSyncCloseTabs;
 
       // 如果启用自动关闭，立即启动倒计时，传入从存储读取的延迟时间
       if (shouldAutoClose) {
@@ -512,6 +515,27 @@ export default function Publish() {
 
     // 发布完成，倒计时已经在页面加载时启动
     console.log("发布完成");
+
+    // 自动关闭窗口
+    // setTimeout(() => {
+    //   // 发布完成后的自动关闭，不应该关闭已经打开的标签页
+    //   // 所以这里我们不调用 handleCloseAllTabs
+    //   window.close();
+    // }, 1000);
+
+    // 尝试关闭 dashboard 页面
+    try {
+      const tabs = await chrome.tabs.query({ url: "https://multipost.app/dashboard/publish" });
+      if (tabs.length > 0) {
+        const tabIds = tabs.map((tab) => tab.id).filter((id): id is number => id !== undefined);
+        if (tabIds.length > 0) {
+          console.log("Closing dashboard tabs:", tabIds);
+          await chrome.tabs.remove(tabIds);
+        }
+      }
+    } catch (error) {
+      console.error("Error closing dashboard tab:", error);
+    }
   };
 
   useEffect(() => {
@@ -570,8 +594,8 @@ export default function Publish() {
 
   return (
     <HeroUIProvider>
-      <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-background">
-        <div className="w-full max-w-md space-y-4">
+      <div className="flex flex-col justify-center items-center p-4 min-h-screen bg-background">
+        <div className="space-y-4 w-full max-w-md">
           <h2 className="text-xl font-semibold text-center text-foreground">{chrome.i18n.getMessage("publishing")}</h2>
           {title && <p className="text-sm text-center truncate text-muted-foreground">{title}</p>}
           <Progress
@@ -604,7 +628,7 @@ export default function Publish() {
                 return (
                   <div key={tab.tab.id} className="mb-6">
                     <ul className="space-y-2">
-                      <li key={tab.tab.id} className="relative flex items-center">
+                      <li key={tab.tab.id} className="flex relative items-center">
                         <Button
                           isIconOnly
                           size="sm"
@@ -615,14 +639,14 @@ export default function Publish() {
                           <RefreshCw className="w-4 h-4" />
                         </Button>
                         <Button
-                          className="justify-start pl-2 pr-10 text-left grow"
+                          className="justify-start pr-10 pl-2 text-left grow"
                           onPress={() => handleTabClick(tab.tab.id)}
                           onMouseDown={(e) => handleTabMiddleClick(e, tab.tab.id)}>
                           {tab.tab.favIconUrl && (
                             <img
                               src={tab.tab.favIconUrl}
                               alt=""
-                              className="w-4 h-4 mr-2 shrink-0"
+                              className="mr-2 w-4 h-4 shrink-0"
                               onError={(e) => (e.currentTarget.style.display = "none")}
                             />
                           )}
@@ -633,7 +657,7 @@ export default function Publish() {
                           size="sm"
                           color="danger"
                           variant="light"
-                          className="absolute -translate-y-1/2 right-2 top-1/2"
+                          className="absolute right-2 top-1/2 -translate-y-1/2"
                           onPress={() => handleCloseTab(tab.tab.id)}
                           aria-label={chrome.i18n.getMessage("sidepanelCloseTab")}>
                           <X className="w-4 h-4" />
@@ -645,9 +669,9 @@ export default function Publish() {
               })}
           </div>
           {/* 自动关闭设置和倒计时 */}
-          <div className="px-3 py-2 space-y-3 rounded-lg bg-gray-50">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+          <div className="px-3 py-2 space-y-3 bg-gray-50 rounded-lg">
+            <div className="flex justify-between items-center">
+              <div className="flex gap-2 items-center">
                 <Tooltip
                   content="You can set a suitable delay for different social media platforms when automating"
                   placement="top"
@@ -661,7 +685,7 @@ export default function Publish() {
                   </Switch>
                 </Tooltip>
                 {autoClose && (
-                  <div className="flex items-center gap-1 ml-2">
+                  <div className="flex gap-1 items-center ml-2">
                     <NumberInput
                       hideStepper
                       size="sm"
@@ -707,7 +731,7 @@ export default function Publish() {
           </div>
 
           {!isProcessing && (
-            <div className="flex justify-center gap-2 mt-4">
+            <div className="flex gap-2 justify-center mt-4">
               <Button color="primary" variant="solid" onPress={handleCloseWindow} className="flex-1">
                 {chrome.i18n.getMessage("finishPublishing")}
               </Button>
