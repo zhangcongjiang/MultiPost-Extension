@@ -81,72 +81,90 @@ export default function Publish() {
 
   async function processArticle(data: SyncData): Promise<SyncData> {
     setNotice(chrome.i18n.getMessage("processingContent"));
+
+    // ✅ 类型保护（关键）
+    if (!data.data || typeof data.data !== "object" || !("htmlContent" in data.data)) {
+      return data;
+    }
+
     const parser = new DOMParser();
-    const { htmlContent, markdownContent, images, cover } = data.data as ArticleData;
+    const articleData = data.data as ArticleData;
+
+    const { htmlContent, markdownContent, images, cover } = articleData;
+
     const doc = parser.parseFromString(htmlContent, "text/html");
     const imgElements = Array.from(doc.getElementsByTagName("img")) as HTMLImageElement[];
-    const blobUrls: string[] = [];
 
     const processedImages: FileData[] = [];
-    let processedHtmlContent = htmlContent;
-    let processedMarkdownContent = markdownContent;
+    let processedMarkdownContent = markdownContent || "";
     let processedCoverImage: FileData | null = null;
 
-    // 处理所有图片
-    if (Array.isArray(imgElements) && imgElements.length > 0) {
-      for (const img of imgElements) {
-        try {
-          const originalUrl = img.src;
-          // 跳过已经是 blob URL 的图片
-          if (originalUrl.startsWith("blob:")) continue;
+    // ✅ 处理图片
+    for (const img of imgElements) {
+      try {
+        const originalUrl = img.src;
 
-          // 下载图片并创建 blob URL
-          const response = await fetch(originalUrl);
-          const blob = await response.blob();
-          const blobUrl = URL.createObjectURL(blob);
-
-          // 替换 HTML 中的图片 URL
-          img.src = blobUrl;
-          blobUrls.push(blobUrl);
-
-          processedImages.push({
-            name: images?.find((image) => image.url === originalUrl)?.name || originalUrl.split("/").pop() || blobUrl,
-            url: blobUrl,
-            type: blob.type,
-            size: blob.size,
-          });
-
-          // 替换 markdown 中的图片 URL
-          // 使用正则表达式匹配 markdown 中的图片语法
-          const escapedUrl = originalUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-          const imgRegex = new RegExp(`!\\[.*?\\]\\(${escapedUrl}\\)`, "g");
-          processedMarkdownContent = processedMarkdownContent.replace(imgRegex, (match) => {
-            return match.replace(originalUrl, blobUrl);
-          });
-        } catch (error) {
-          console.error("处理图片时出错:", error);
-          // 继续处理下一张图片
-          setNotice(chrome.i18n.getMessage("errorProcessImage", [img.src]));
-          setErrors((prev) => [...prev, chrome.i18n.getMessage("errorProcessImage", [img.src])]);
+        // ✅ 关键过滤（避免 blob 报错）
+        if (
+          !originalUrl ||
+          originalUrl.startsWith("blob:") ||
+          originalUrl.startsWith("data:") ||
+          !originalUrl.startsWith("http")
+        ) {
+          continue;
         }
+
+        const response = await fetch(originalUrl);
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+
+        // 替换 HTML
+        img.src = blobUrl;
+
+        const name =
+          images?.find((image) => image.url === originalUrl)?.name || originalUrl.split("/").pop() || "image";
+
+        processedImages.push({
+          name,
+          url: blobUrl,
+          type: blob.type,
+          size: blob.size,
+        });
+
+        // 替换 markdown
+        const escapedUrl = originalUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const imgRegex = new RegExp(`!\\[.*?\\]\\(${escapedUrl}\\)`, "g");
+
+        processedMarkdownContent = processedMarkdownContent.replace(imgRegex, (match) =>
+          match.replace(originalUrl, blobUrl),
+        );
+      } catch (error) {
+        console.error("处理图片时出错:", error);
+        setNotice(chrome.i18n.getMessage("errorProcessImage", [img.src]));
+        setErrors((prev) => [...prev, chrome.i18n.getMessage("errorProcessImage", [img.src])]);
       }
     }
 
+    // ✅ 处理封面
     if (cover) {
       processedCoverImage = await processFile(cover);
     }
 
-    processedHtmlContent = doc.documentElement.outerHTML;
+    const processedHtmlContent = doc.documentElement.outerHTML;
 
+    // ✅ 显式声明为 ArticleData（关键！）
+    const newArticleData: ArticleData = {
+      ...articleData,
+      htmlContent: processedHtmlContent,
+      markdownContent: processedMarkdownContent,
+      images: processedImages,
+      cover: processedCoverImage || cover,
+    };
+
+    // ✅ 返回完整 SyncData（关键！）
     return {
       ...data,
-      data: {
-        ...data.data,
-        htmlContent: processedHtmlContent,
-        markdownContent: processedMarkdownContent,
-        images: processedImages,
-        cover: processedCoverImage || cover,
-      },
+      data: newArticleData,
     };
   }
 

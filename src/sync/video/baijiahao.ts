@@ -31,190 +31,174 @@ export async function VideoBaijiahao(data: SyncData) {
 
   async function uploadVideo(file: File): Promise<void> {
     const fileInput = (await waitForElement('input[type="file"]')) as HTMLInputElement;
-    await new Promise((resolve) => setTimeout(resolve, 3000)); // 等待页面完全加载
-
-    console.log("找到文件输入框:", fileInput);
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
     const dataTransfer = new DataTransfer();
     dataTransfer.items.add(file);
     fileInput.files = dataTransfer.files;
 
-    // 触发必要的事件
-    const changeEvent = new Event("change", { bubbles: true });
-    fileInput.dispatchEvent(changeEvent);
+    fileInput.dispatchEvent(new Event("input", { bubbles: true }));
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
 
-    const inputEvent = new Event("input", { bubbles: true });
-    fileInput.dispatchEvent(inputEvent);
-
-    console.log("文件上传操作完成");
+    console.log("视频上传触发完成");
   }
 
-  async function waitForUploadCompletion(timeout = 600000): Promise<void> {
+  async function waitForUploadCompletion(timeout = 600000): Promise<unknown> {
     return new Promise((resolve, reject) => {
-      const checkInterval = setInterval(() => {
-        const spans = document.querySelectorAll("span");
-        const uploadCompleteElement = Array.from(spans).find((span) => span.textContent?.includes("上传完成"));
-        if (uploadCompleteElement) {
-          clearInterval(checkInterval);
+      const interval = setInterval(() => {
+        const publishBtn = document.querySelector("button.cheetah-btn-primary") as HTMLButtonElement;
+
+        if (publishBtn && !publishBtn.disabled) {
+          clearInterval(interval);
           console.log("视频上传完成");
           resolve();
         }
       }, 1000);
 
       setTimeout(() => {
-        clearInterval(checkInterval);
+        clearInterval(interval);
         reject(new Error("视频上传超时"));
       }, timeout);
     });
   }
 
-  async function uploadCover(cover: { url: string; name: string; type?: string }) {
-    console.log("tryCover", cover);
+  // ===== 通用上传函数 =====
+  async function uploadToInput(input: HTMLInputElement, fileData: any) {
+    const res = await fetch(fileData.url);
+    const buffer = await res.arrayBuffer();
 
-    // 1. Find and click the cover upload button
-    const coverUploadContainer = document.querySelector(
-      "div.cheetah-upload span.cheetah-upload div.cheetah-spin-container",
-    );
-    console.log("coverUpload", coverUploadContainer);
-    if (!coverUploadContainer) return;
+    const file = new File([buffer], fileData.name, {
+      type: fileData.type,
+    });
 
-    const coverUploadButton = coverUploadContainer.firstChild as HTMLElement;
-    console.log("coverUploadButton", coverUploadButton);
-    if (!coverUploadButton) return;
+    const dt = new DataTransfer();
+    dt.items.add(file);
 
-    coverUploadButton.click();
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    input.files = dt.files;
 
-    // 2. Find the file input
-    const fileInput = document.querySelector("div.cheetah-tabs-content input[name='media']") as HTMLInputElement;
-    console.log("fileInput", fileInput);
-    if (!fileInput) return;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
 
-    // 3. Prepare the file for upload
-    const dataTransfer = new DataTransfer();
+    console.log("封面上传触发:", file.name);
 
-    console.log("try upload file", cover);
-    if (!cover.type || !cover.type.includes("image/")) {
-      console.log("Cover is not an image, skipping upload");
+    // 🔥 关键修复：先等弹窗“真的出现”
+    await new Promise((r) => setTimeout(r, 1000));
+
+    // 🔥 再去找按钮（而不是立刻找）
+    try {
+      await waitAndClickButtonMulti(["确定", "完成"], 10000);
+    } catch (_e) {
+      console.log("未检测到裁剪弹窗");
+    }
+
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+
+  async function waitAndClickButtonMulti(texts: string[], timeout = 10000) {
+    return new Promise<void>((resolve, reject) => {
+      const interval = setInterval(() => {
+        const buttons = document.querySelectorAll("button");
+
+        const btn = Array.from(buttons).find((b) => {
+          const el = b as HTMLButtonElement;
+          const text = el.textContent?.trim();
+
+          // 🔥 核心修复：只点“可见”的按钮
+          const isVisible =
+            el.offsetParent !== null && // 在页面上
+            window.getComputedStyle(el).visibility !== "hidden" &&
+            window.getComputedStyle(el).display !== "none";
+
+          return text && texts.includes(text) && !el.disabled && isVisible;
+        }) as HTMLButtonElement;
+
+        if (btn) {
+          clearInterval(interval);
+          console.log("点击按钮(真实):", btn.textContent);
+          btn.click();
+          resolve();
+        }
+      }, 300);
+
+      setTimeout(() => {
+        clearInterval(interval);
+        reject(new Error("按钮未找到"));
+      }, timeout);
+    });
+  }
+
+  // ===== 核心：上传双封面 =====
+  async function uploadBothCovers(cover?: any, verticalCover?: any) {
+    await new Promise((r) => setTimeout(r, 1000));
+
+    const inputs = document.querySelectorAll('input[name="media"]') as NodeListOf<HTMLInputElement>;
+
+    if (inputs.length < 2) {
+      console.log("未找到两个封面 input");
       return;
     }
 
-    const response = await fetch(cover.url);
-    const arrayBuffer = await response.arrayBuffer();
-    const coverFile = new File([arrayBuffer], cover.name, { type: cover.type });
+    const [coverInput, verticalInput] = inputs;
 
-    dataTransfer.items.add(coverFile);
+    console.log("竖版 input:", coverInput);
+    console.log("横版 input:", verticalInput);
 
-    if (dataTransfer.files.length === 0) return;
-
-    // 4. Set the file on the input and dispatch events
-    fileInput.files = dataTransfer.files;
-
-    const changeEvent = new Event("change", { bubbles: true });
-    fileInput.dispatchEvent(changeEvent);
-
-    const inputEvent = new Event("input", { bubbles: true });
-    fileInput.dispatchEvent(inputEvent);
-
-    console.log("文件上传操作触发");
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-
-    // 5. Find and click the confirm button
-    const doneButtons = document.querySelectorAll("button");
-    console.log("doneButtons", doneButtons);
-
-    const doneButton = Array.from(doneButtons).find((e) => e.textContent === "确定");
-    console.log("doneButton", doneButton);
-
-    if (doneButton) {
-      (doneButton as HTMLElement).click();
+    if (cover?.type?.includes("image/")) {
+      await uploadToInput(coverInput, cover);
     }
+    await new Promise((r) => setTimeout(r, 1500));
+
+    if (verticalCover?.type?.includes("image/")) {
+      await uploadToInput(verticalInput, verticalCover);
+    }
+
+    console.log("封面上传完成（双封面）");
   }
 
   try {
-    const { content, video, title, tags, cover } = data.data as VideoData;
+    const { content, video, title, tags, cover, verticalCover } = data.data as VideoData;
 
     if (!video) {
       console.error("没有视频文件");
       return;
     }
 
-    // 处理视频上传
+    // ===== 上传视频 =====
     const response = await fetch(video.url);
     const arrayBuffer = await response.arrayBuffer();
     const videoFile = new File([arrayBuffer], `${title || "video"}.${video.name.split(".").pop()}`, {
       type: video.type,
     });
 
-    console.log(`准备上传视频: ${videoFile.name} (${videoFile.type}, ${videoFile.size} bytes)`);
+    console.log(`准备上传视频: ${videoFile.name}`);
 
     await uploadVideo(videoFile);
     await waitForUploadCompletion();
 
-    // 等待页面状态稳定
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((r) => setTimeout(r, 2000));
 
-    // 处理标题输入
-    const titleInput = document.querySelector('textarea[placeholder="请输入标题"]') as HTMLTextAreaElement;
-    if (titleInput) {
-      titleInput.value = title || "";
-      titleInput.dispatchEvent(new Event("input", { bubbles: true }));
-      console.log("标题已输入:", title);
+    // ===== 封面（关键改造点）=====
+    if (cover || verticalCover) {
+      await uploadBothCovers(cover, verticalCover);
     }
 
-    // 处理描述输入
-    const descriptionInput = document.querySelector('textarea[placeholder="让别人更懂你"]') as HTMLTextAreaElement;
+    await new Promise((r) => setTimeout(r, 3000));
 
-    if (descriptionInput) {
-      const description = (content || title || "").slice(0, 100);
-      descriptionInput.value = description;
-      descriptionInput.dispatchEvent(new Event("input", { bubbles: true }));
-      console.log("描述已输入:", description);
-    }
-
-    // 处理标签输入
-    const tagInput = document.querySelector('input[placeholder="获得精准推荐"]') as HTMLInputElement;
-    if (tagInput && tags) {
-      for (const tag of tags) {
-        tagInput.value = tag;
-        console.log("正在输入标签:", tag);
-
-        // 触发回车事件来添加标签
-        const enterEvent = new KeyboardEvent("keydown", {
-          bubbles: true,
-          cancelable: true,
-          key: "Enter",
-          code: "Enter",
-          keyCode: 13,
-          which: 13,
-        });
-        tagInput.dispatchEvent(enterEvent);
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-    }
-
-    if (cover) {
-      await uploadCover(cover);
-    }
-
-    // 等待页面响应
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-
-    // 如果需要自动发布
+    // ===== 发布 =====
     if (data.isAutoPublish) {
       const publishButton = document.querySelector(
         "button.cheetah-btn.cheetah-btn-circle.cheetah-btn-primary.cheetah-btn-icon-only.cheetah-public",
       ) as HTMLButtonElement;
 
       if (publishButton) {
-        console.log("点击发布按钮");
+        console.log("点击发布");
         publishButton.click();
       } else {
         console.log("未找到发布按钮");
       }
     }
   } catch (error) {
-    console.error("百家号视频发布过程中出错:", error);
+    console.error("百家号发布失败:", error);
     throw error;
   }
 }
