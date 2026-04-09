@@ -9,6 +9,7 @@ interface CoverResult {
 
 export async function ArticleBaijiahao(data: SyncData) {
   const articleData = data.data as ArticleData;
+
   // 上传单个图片
   async function uploadSingleImage(fileInfo: FileData): Promise<string | null> {
     try {
@@ -143,7 +144,7 @@ export async function ArticleBaijiahao(data: SyncData) {
   }
 
   // 获取图片实际尺寸
-  async function getImageDimensions(url: string): Promise<{ width: number; height: number } | null> {
+  async function getImageDimensions(url: string): Promise<unknown> {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {

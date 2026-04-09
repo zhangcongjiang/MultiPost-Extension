@@ -123,11 +123,11 @@ export default function Publish() {
           processedMarkdownContent = processedMarkdownContent.replace(imgRegex, (match) => {
             return match.replace(originalUrl, blobUrl);
           });
-        } catch (error) {
-          console.error("处理图片时出错:", error);
+        } catch (_error) {
+          // console.error("处理图片时出错:", error);
           // 继续处理下一张图片
           setNotice(chrome.i18n.getMessage("errorProcessImage", [img.src]));
-          setErrors((prev) => [...prev, chrome.i18n.getMessage("errorProcessImage", [img.src])]);
+          // setErrors((prev) => [...prev, chrome.i18n.getMessage("errorProcessImage", [img.src])]);
         }
       }
     }

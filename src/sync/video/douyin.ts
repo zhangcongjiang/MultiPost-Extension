@@ -135,12 +135,15 @@ export async function VideoDouyin(data: SyncData) {
     console.log("竖版封面文件上传操作已触发");
     await new Promise((resolve) => setTimeout(resolve, 3000));
 
-    const verticalButtons = document.querySelectorAll("button.semi-button.semi-button-primary.semi-button-light");
-    console.log("完成按钮列表", verticalButtons);
-    const verticalButton = Array.from(verticalButtons).find((button) => button.textContent === "设置横封面");
-    console.log("设置横版封面按钮", verticalButton);
-    if (verticalButton) {
-      (verticalButton as HTMLElement).click();
+    const horizontalStepSpan = Array.from(document.querySelectorAll("span")).find(
+      (span) => span.textContent?.trim() === "设置横封面",
+    ) as HTMLElement | undefined;
+    const horizontalStepTab = horizontalStepSpan?.closest("div.step-dXVbPX") as HTMLElement | null;
+    console.log("设置横版封面步骤", horizontalStepTab || horizontalStepSpan);
+    if (horizontalStepTab) {
+      horizontalStepTab.click();
+    } else if (horizontalStepSpan) {
+      horizontalStepSpan.click();
     }
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
@@ -273,7 +276,11 @@ export async function VideoDouyin(data: SyncData) {
         }
       }
       await new Promise((resolve) => setTimeout(resolve, 3000));
-      // 处理自动发布
+    }
+
+    // 处理自动发布
+    if (data.isAutoPublish) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
       const buttons = document.querySelectorAll("button");
       const publishButton = Array.from(buttons).find((button) => button.textContent === "发布");
 
