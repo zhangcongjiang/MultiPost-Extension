@@ -43,8 +43,8 @@ export async function VideoBaijiahao(data: SyncData) {
     console.log("视频上传触发完成");
   }
 
-  async function waitForUploadCompletion(timeout = 600000): Promise<unknown> {
-    return new Promise((resolve, reject) => {
+  async function waitForUploadCompletion(timeout = 600000): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
       const interval = setInterval(() => {
         const publishBtn = document.querySelector("button.cheetah-btn-primary") as HTMLButtonElement;
 
