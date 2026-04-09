@@ -186,13 +186,18 @@ export async function VideoBaijiahao(data: SyncData) {
 
     // ===== 发布 =====
     if (data.isAutoPublish) {
-      const publishButton = document.querySelector(
-        "button.cheetah-btn.cheetah-btn-circle.cheetah-btn-primary.cheetah-btn-icon-only.cheetah-public",
-      ) as HTMLButtonElement;
+      const publishButton =
+        (document.querySelector('button[data-testid="publish-btn"]') as HTMLButtonElement | null) ||
+        (Array.from(document.querySelectorAll("button")).find(
+          (button) =>
+            button.textContent?.trim() === "发布" &&
+            (button as HTMLButtonElement).disabled === false &&
+            (button as HTMLButtonElement).offsetParent !== null,
+        ) as HTMLButtonElement | undefined);
 
       if (publishButton) {
         console.log("点击发布");
-        publishButton.click();
+        publishButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       } else {
         console.log("未找到发布按钮");
       }
