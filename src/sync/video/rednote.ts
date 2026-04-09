@@ -240,6 +240,9 @@ export async function VideoRednote(data: SyncData) {
   if (scheduledPublishTime) {
     await new Promise((resolve) => setTimeout(resolve, 2000));
     await setScheduledPublishTime(scheduledPublishTime);
+  }
+
+  if (data.isAutoPublish) {
     // 处理发布按钮
     const buttons = document.querySelectorAll("button");
     const publishButton = Array.from(buttons).find((button) => button.textContent?.includes("发布"));
@@ -250,11 +253,9 @@ export async function VideoRednote(data: SyncData) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
 
-      if (publishButton) {
-        publishButton.dispatchEvent(new Event("click", { bubbles: true }));
-        await new Promise((resolve) => setTimeout(resolve, 10000));
-        window.location.href = "https://creator.xiaohongshu.com/new/note-manager";
-      }
+      publishButton.dispatchEvent(new Event("click", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 10000));
+      window.location.href = "https://creator.xiaohongshu.com/new/note-manager";
     }
   }
 }

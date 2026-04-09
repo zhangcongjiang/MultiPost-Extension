@@ -449,8 +449,15 @@ export async function VideoWeiXinChannel(data: SyncData) {
       const root = wujieApp?.shadowRoot || document;
 
       await setScheduledPublishTime(scheduledPublishTime, root);
+    }
+
+    // 处理自动发布
+    if (data.isAutoPublish) {
       // 等待内容填写完成
       await new Promise((resolve) => setTimeout(resolve, 5000));
+
+      const wujieApp = document.querySelector("wujie-app");
+      const root = wujieApp?.shadowRoot || document;
 
       // 处理发布按钮 - 支持shadow DOM查询
       const buttons = root.querySelectorAll("button");
