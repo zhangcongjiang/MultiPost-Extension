@@ -182,7 +182,7 @@ export async function VideoBaijiahao(data: SyncData) {
       await uploadBothCovers(cover, verticalCover);
     }
 
-    await new Promise((r) => setTimeout(r, 3000));
+    await new Promise((r) => setTimeout(r, 2500));
 
     // ===== 发布 =====
     if (data.isAutoPublish) {

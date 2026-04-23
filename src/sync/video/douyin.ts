@@ -107,7 +107,7 @@ export async function VideoDouyin(data: SyncData) {
     if (!coverUploadButton) return;
 
     coverUploadButton.click();
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
     const fileInput = (await waitForElement('input[type="file"].semi-upload-hidden-input')) as HTMLInputElement;
     console.log("封面文件输入框", fileInput);
@@ -133,7 +133,7 @@ export async function VideoDouyin(data: SyncData) {
     fileInput.dispatchEvent(inputEvent);
 
     console.log("竖版封面文件上传操作已触发");
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await new Promise((resolve) => setTimeout(resolve, 4000));
 
     const horizontalStepSpan = Array.from(document.querySelectorAll("span")).find(
       (span) => span.textContent?.trim() === "设置横封面",
@@ -145,7 +145,7 @@ export async function VideoDouyin(data: SyncData) {
     } else if (horizontalStepSpan) {
       horizontalStepSpan.click();
     }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
     const uploadBlocks = Array.from(document.querySelectorAll("div.container-XzaV9h"));
 
@@ -180,7 +180,7 @@ export async function VideoDouyin(data: SyncData) {
     verticalFileInput.click();
 
     console.log("横版封面上传触发完成");
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await new Promise((resolve) => setTimeout(resolve, 5000));
 
     const doneButtons = document.querySelectorAll("button.semi-button.semi-button-primary.semi-button-light");
     console.log("完成按钮列表", doneButtons);
