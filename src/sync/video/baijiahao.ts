@@ -179,7 +179,7 @@ export async function VideoBaijiahao(data: SyncData) {
 
     // ===== 封面（关键改造点）=====
     if (cover || verticalCover) {
-      await uploadBothCovers(cover, verticalCover);
+      await uploadBothCovers(verticalCover, cover);
     }
 
     await new Promise((r) => setTimeout(r, 2500));
