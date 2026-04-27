@@ -1,5 +1,5 @@
 import { Button, Image, Popover, PopoverContent, PopoverTrigger } from "@heroui/react";
-import { BookOpenText, BotIcon, LayoutDashboardIcon, SendIcon } from "lucide-react";
+import { BookOpenText, BotIcon, LayoutDashboardIcon } from "lucide-react";
 import type React from "react";
 
 const Header: React.FC = () => {
@@ -22,16 +22,6 @@ const Header: React.FC = () => {
             href="https://multipost.app/dashboard"
             startContent={<LayoutDashboardIcon size={16} />}>
             <span className="text-sm">{chrome.i18n.getMessage("optionViewHomePageDashboard")}</span>
-          </Button>
-          <Button
-            size="sm"
-            variant="flat"
-            color="primary"
-            as="a"
-            target="_blank"
-            href="https://multipost.app/dashboard/publish"
-            startContent={<SendIcon size={16} />}>
-            <span className="text-sm">{chrome.i18n.getMessage("optionViewHomePagePublish")}</span>
           </Button>
           <Popover>
             <PopoverTrigger>

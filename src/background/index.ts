@@ -1,4 +1,3 @@
-import { Storage } from "@plasmohq/storage";
 import { getAllAccountInfo } from "~sync/account";
 import {
   // injectScriptsToTabs,
@@ -17,27 +16,10 @@ import {
 } from "./services/tabs";
 import { trustDomainMessageHandler } from "./services/trust-domain";
 
-const storage = new Storage({
-  area: "local",
-});
-
-async function initDefaultTrustedDomains() {
-  const trustedDomains = await storage.get<Array<{ id: string; domain: string }>>("trustedDomains");
-  if (!trustedDomains) {
-    await storage.set("trustedDomains", [
-      {
-        id: crypto.randomUUID(),
-        domain: "multipost.app",
-      },
-    ]);
-  }
-}
-
 chrome.runtime.onInstalled.addListener((object) => {
   if (object.reason === chrome.runtime.OnInstalledReason.INSTALL) {
     chrome.tabs.create({ url: "https://multipost.app/on-install" });
   }
-  initDefaultTrustedDomains();
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
 });
 

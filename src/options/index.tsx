@@ -1,7 +1,6 @@
 import "~style.css";
 import cssText from "data-text:~style.css";
 import type { PlasmoCSConfig } from "plasmo";
-import { useEffect } from "react";
 
 export const config: PlasmoCSConfig = {
   // matches: ["https://www.plasmo.com/*"]
@@ -13,8 +12,6 @@ export function getShadowContainer() {
 
 export const getShadowHostId = () => "test-shadow";
 
-const BASE_URL = "https://multipost.app";
-
 export const getStyle = () => {
   const style = document.createElement("style");
 
@@ -23,15 +20,6 @@ export const getStyle = () => {
 };
 
 const Options = () => {
-  useEffect(() => {
-    chrome.tabs.getCurrent((tab) => {
-      chrome.tabs.create({ url: `${BASE_URL}/dashboard/publish` });
-      if (tab?.id) {
-        chrome.tabs.remove(tab.id);
-      }
-    });
-  }, []);
-
   return <div />;
 };
 

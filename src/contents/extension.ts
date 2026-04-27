@@ -1,4 +1,3 @@
-import { Storage } from "@plasmohq/storage";
 import type { PlasmoCSConfig } from "plasmo";
 import type { ExtensionExternalRequest, ExtensionExternalResponse } from "~types/external";
 
@@ -7,11 +6,8 @@ export const config: PlasmoCSConfig = {
   run_at: "document_start",
 };
 
-const storage = new Storage({
-  area: "local",
-});
-
-const ACTIONS_NOT_NEED_TRUST_DOMAIN = ["MULTIPOST_EXTENSION_REQUEST_TRUST_DOMAIN"];
+// Hardcoded whitelist: only local development origins are trusted
+const ALLOWED_ORIGINS = ["localhost", "127.0.0.1"];
 
 function getRightAction(action: string) {
   if (action.startsWith("MUTLIPOST")) {
@@ -20,20 +16,8 @@ function getRightAction(action: string) {
   return action;
 }
 
-async function isOriginTrusted(origin: string, action: string): Promise<boolean> {
-  if (ACTIONS_NOT_NEED_TRUST_DOMAIN.includes(action)) {
-    return true;
-  }
-
-  const trustedDomains = (await storage.get<Array<{ domain: string }>>("trustedDomains")) || [];
-
-  return trustedDomains.some(({ domain }) => {
-    if (domain.startsWith("*.")) {
-      const wildCardDomain = domain.slice(2);
-      return origin.endsWith(wildCardDomain);
-    }
-    return origin === domain;
-  });
+function isOriginTrusted(origin: string): boolean {
+  return ALLOWED_ORIGINS.some((allowed) => origin === allowed);
 }
 
 window.addEventListener("message", async (event) => {
@@ -44,7 +28,7 @@ window.addEventListener("message", async (event) => {
   }
 
   // 验证来源是否可信
-  const isTrusted = await isOriginTrusted(new URL(event.origin).hostname, getRightAction(request.action));
+  const isTrusted = isOriginTrusted(new URL(event.origin).hostname);
   if (!isTrusted) {
     event.source.postMessage({
       type: "response",
