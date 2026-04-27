@@ -13,6 +13,7 @@ import { getRednoteAccountInfo } from "./account/rednote";
 import { getSohuAccountInfo } from "./account/sohu";
 import { getTiktokAccountInfo } from "./account/tiktok";
 import { getVivoVideoAccountInfo } from "./account/vivovideo";
+import { getWeixinChannelAccountInfo } from "./account/weixinchannel";
 import { getXAccountInfo } from "./account/x";
 import { getYicheAccountInfo } from "./account/yiche";
 import { getYidianAccountInfo } from "./account/yidian";
@@ -70,6 +71,13 @@ export const refreshAccountInfoMap: Record<
     homeUrl: "https://t.bilibili.com",
     faviconUrl: "https://static.hdslb.com/images/favicon.ico",
     getAccountInfo: getBilibiliAccountInfo,
+  },
+  weixinchannel: {
+    platformName: chrome.i18n.getMessage("platformWeiXinVideo"),
+    accountKey: "weixinchannel",
+    homeUrl: "https://channels.weixin.qq.com/platform",
+    faviconUrl: "https://channels.weixin.qq.com/favicon.ico",
+    getAccountInfo: getWeixinChannelAccountInfo,
   },
   qie: {
     platformName: chrome.i18n.getMessage("platformQiE"),

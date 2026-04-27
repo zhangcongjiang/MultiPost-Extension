@@ -8,6 +8,7 @@ import {
 } from "~sync/common";
 import QuantumEntanglementKeepAlive from "../utils/keep-alive";
 import { linkExtensionMessageHandler, starter } from "./services/api";
+import { initKeepAliveService, keepAliveMessageHandler } from "./services/keepalive";
 import {
   addTabsManagerMessages,
   tabsManagerHandleTabRemoved,
@@ -29,6 +30,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   tabsManagerMessageHandler(request, sender, sendResponse);
   trustDomainMessageHandler(request, sender, sendResponse);
   linkExtensionMessageHandler(request, sender, sendResponse);
+  keepAliveMessageHandler(request, sender, sendResponse);
   return true;
 });
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
@@ -124,6 +126,7 @@ const defaultMessageHandler = (request, _sender, sendResponse) => {
   }
 };
 starter(1000 * 30);
+initKeepAliveService();
 // Message Handler || 消息处理器 || END
 
 // Keep Alive || 保活机制 || START
