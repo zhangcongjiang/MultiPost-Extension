@@ -23,6 +23,8 @@ const AUTO_CLOSE_KEY = "publish-auto-close";
 const AUTO_CLOSE_DELAY_KEY = "publish-auto-close-delay";
 const SYNC_CLOSE_TABS_KEY = "publish-sync-close-tabs";
 const DEFAULT_AUTO_CLOSE_DELAY = 3 * 60; // 3 minutes in seconds
+const REGISTER_PUBLISH_AUTO_CLOSE_ACTION = "MULTIPOST_EXTENSION_REGISTER_PUBLISH_AUTO_CLOSE";
+const CANCEL_PUBLISH_AUTO_CLOSE_ACTION = "MULTIPOST_EXTENSION_CANCEL_PUBLISH_AUTO_CLOSE";
 
 export function getShadowContainer() {
   return document.querySelector("#test-shadow").shadowRoot.querySelector("#plasmo-shadow-container");
@@ -72,12 +74,20 @@ export default function Publish() {
   const autoCloseTimerRef = useRef<number>();
   const countdownTimerRef = useRef<number>();
   const syncCloseTabsRef = useRef<boolean>(false);
+  const autoCloseRef = useRef<boolean>(true);
+  const autoCloseDelayRef = useRef<number>(DEFAULT_AUTO_CLOSE_DELAY);
   const publishedTabsRef = useRef<
     Array<{
       tab: chrome.tabs.Tab;
       platformInfo: SyncDataPlatform;
     }>
   >([]);
+  const publishCompletedRef = useRef<boolean>(false);
+  const publishWindowIdRef = useRef<number>();
+  const publishTabsWindowIdRef = useRef<number>();
+  const publishGroupIdRef = useRef<number>();
+  const publishGroupTitleRef = useRef<string>();
+  const autoCloseSessionIdRef = useRef(`publish-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
 
   async function processArticle(data: SyncData): Promise<SyncData> {
     setNotice(chrome.i18n.getMessage("processingContent"));
@@ -336,25 +346,72 @@ export default function Publish() {
     window.close();
   };
 
-  const handleAutoCloseChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const checked = event.target.checked;
-    // 切换 autoClose 时清除之前的定时器
+  const clearCountdownTimer = () => {
     if (autoCloseTimerRef.current) {
       clearTimeout(autoCloseTimerRef.current);
+      autoCloseTimerRef.current = undefined;
     }
     if (countdownTimerRef.current) {
       clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = undefined;
     }
+  };
+
+  const cancelBackgroundAutoClose = async () => {
+    await chrome.runtime.sendMessage({
+      action: CANCEL_PUBLISH_AUTO_CLOSE_ACTION,
+      data: {
+        sessionId: autoCloseSessionIdRef.current,
+      },
+    });
+  };
+
+  const scheduleBackgroundAutoClose = async (delaySeconds: number) => {
+    const tabIds = publishedTabsRef.current
+      .map((item) => item.tab.id)
+      .filter((id): id is number => typeof id === "number");
+    const executeAt = Date.now() + delaySeconds * 1000;
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: REGISTER_PUBLISH_AUTO_CLOSE_ACTION,
+        data: {
+          sessionId: autoCloseSessionIdRef.current,
+          windowId: publishWindowIdRef.current,
+          tabsWindowId: publishTabsWindowIdRef.current,
+          tabIds,
+          groupId: publishGroupIdRef.current,
+          groupTitle: publishGroupTitleRef.current,
+          closeTabs: syncCloseTabsRef.current,
+          closeWindow: true,
+          executeAt,
+        },
+      });
+
+      if (!response?.ok) {
+        console.error("注册自动关闭失败:", response?.error);
+      }
+    } catch (error) {
+      console.error("注册自动关闭消息发送失败:", error);
+    }
+  };
+
+  const handleAutoCloseChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = event.target.checked;
+    clearCountdownTimer();
     setAutoClose(checked);
+    autoCloseRef.current = checked;
     await storage.set(AUTO_CLOSE_KEY, String(checked));
 
-    if (checked) {
-      // 如果开启了自动关闭，立即启动新的定时器
-      console.log("用户开启自动关闭，启动定时器");
-      startAutoCloseTimer();
+    if (publishCompletedRef.current && checked) {
+      console.log("用户开启自动关闭，重新注册后台清理任务");
+      await scheduleBackgroundAutoClose(autoCloseDelay);
+      startAutoCloseTimer(autoCloseDelay);
+    } else if (!checked) {
+      console.log("用户关闭自动关闭，取消后台清理任务");
+      await cancelBackgroundAutoClose();
+      setCountdown(0);
     } else {
-      // 如果关闭了自动关闭，清除倒计时
-      console.log("用户关闭自动关闭，清除倒计时");
       setCountdown(0);
     }
   };
@@ -365,59 +422,36 @@ export default function Publish() {
 
     const seconds = minutes * 60;
     setAutoCloseDelay(seconds);
+    autoCloseDelayRef.current = seconds;
     await storage.set(AUTO_CLOSE_DELAY_KEY, String(seconds));
 
-    // 如果当前正在倒计时，重新启动定时器
-    if (autoClose && countdown > 0) {
-      console.log("用户修改延迟时间，重新启动定时器:", seconds, "秒");
-      if (autoCloseTimerRef.current) {
-        clearTimeout(autoCloseTimerRef.current);
-      }
-      if (countdownTimerRef.current) {
-        clearInterval(countdownTimerRef.current);
-      }
+    if (publishCompletedRef.current && autoCloseRef.current) {
+      console.log("用户修改延迟时间，重新注册后台清理任务:", seconds, "秒");
+      await scheduleBackgroundAutoClose(seconds);
       startAutoCloseTimer(seconds);
     }
   };
 
   const startAutoCloseTimer = (delaySeconds?: number) => {
-    const delay = delaySeconds || autoCloseDelay;
+    const delay = delaySeconds || autoCloseDelayRef.current;
     console.log("startAutoCloseTimer 被调用，延迟时间:", delay, "秒");
-    // 清除之前的定时器
-    if (autoCloseTimerRef.current) {
-      clearTimeout(autoCloseTimerRef.current);
-    }
-    if (countdownTimerRef.current) {
-      clearInterval(countdownTimerRef.current);
-    }
+    clearCountdownTimer();
 
-    // 设置倒计时
     console.log("设置倒计时:", delay, "秒");
     setCountdown(delay);
 
-    // 倒计时更新
     countdownTimerRef.current = window.setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
           if (countdownTimerRef.current) {
             clearInterval(countdownTimerRef.current);
+            countdownTimerRef.current = undefined;
           }
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
-
-    // 自动关闭定时器
-    autoCloseTimerRef.current = window.setTimeout(async () => {
-      // 如果是发布过程中的超时自动关闭（比如用户没操作），才考虑 syncCloseTabs
-      // 但如果是发布成功后的自动关闭，通常我们希望保留标签页
-      // 这里是通用的自动关闭定时器，所以如果用户开启了 syncCloseTabs，它会关闭标签页
-      if (syncCloseTabsRef.current) {
-        await handleCloseAllTabs();
-      }
-      window.close();
-    }, delay * 1000);
   };
 
   const handleTabUpdated = (tabId: number, _changeInfo: chrome.tabs.TabChangeInfo, tab: chrome.tabs.Tab) => {
@@ -435,17 +469,16 @@ export default function Publish() {
     setSyncCloseTabs(checked);
     syncCloseTabsRef.current = checked;
     await storage.set(SYNC_CLOSE_TABS_KEY, String(checked));
+
+    if (publishCompletedRef.current && autoCloseRef.current && countdown > 0) {
+      await scheduleBackgroundAutoClose(countdown);
+    }
   };
 
   // 组件卸载时清除定时器
   useEffect(() => {
     return () => {
-      if (autoCloseTimerRef.current) {
-        clearTimeout(autoCloseTimerRef.current);
-      }
-      if (countdownTimerRef.current) {
-        clearInterval(countdownTimerRef.current);
-      }
+      clearCountdownTimer();
     };
   }, []);
 
@@ -472,19 +505,19 @@ export default function Publish() {
       setAutoClose(shouldAutoClose);
       setAutoCloseDelay(delaySeconds);
       setSyncCloseTabs(shouldSyncCloseTabs);
+      autoCloseRef.current = shouldAutoClose;
+      autoCloseDelayRef.current = delaySeconds;
       syncCloseTabsRef.current = shouldSyncCloseTabs;
-
-      // 如果启用自动关闭，立即启动倒计时，传入从存储读取的延迟时间
-      if (shouldAutoClose) {
-        console.log("页面加载时启动自动关闭定时器，使用延迟时间:", delaySeconds, "秒");
-        startAutoCloseTimer(delaySeconds);
-      }
     });
   }, []);
 
   // 发布完成后的处理逻辑
   const handlePublishComplete = async (response: {
     tabs?: Array<{ tab: chrome.tabs.Tab; platformInfo: SyncDataPlatform }>;
+    publishWindowId?: number;
+    groupId?: number;
+    groupTitle?: string;
+    tabsWindowId?: number;
   }) => {
     setIsProcessing(false);
     setNotice(chrome.i18n.getMessage("publishComplete"));
@@ -513,8 +546,20 @@ export default function Publish() {
       publishedTabsRef.current = updatedTabs;
     }
 
-    // 发布完成，倒计时已经在页面加载时启动
+    publishWindowIdRef.current =
+      typeof response?.publishWindowId === "number" ? response.publishWindowId : publishWindowIdRef.current;
+    publishGroupIdRef.current = typeof response?.groupId === "number" ? response.groupId : undefined;
+    publishGroupTitleRef.current = typeof response?.groupTitle === "string" ? response.groupTitle : undefined;
+    publishTabsWindowIdRef.current = typeof response?.tabsWindowId === "number" ? response.tabsWindowId : undefined;
+
+    publishCompletedRef.current = true;
     console.log("发布完成");
+
+    if (autoCloseRef.current) {
+      const effectiveDelay = autoCloseDelayRef.current;
+      await scheduleBackgroundAutoClose(effectiveDelay);
+      startAutoCloseTimer(effectiveDelay);
+    }
 
     // 自动关闭窗口
     // setTimeout(() => {
@@ -539,6 +584,12 @@ export default function Publish() {
   };
 
   useEffect(() => {
+    chrome.windows.getCurrent().then((currentWindow) => {
+      if (currentWindow?.id) {
+        publishWindowIdRef.current = currentWindow.id;
+      }
+    });
+
     chrome.tabs.onUpdated.addListener(handleTabUpdated);
     chrome.tabs.onRemoved.addListener(handleTabRemoved);
     chrome.runtime.sendMessage({ action: "MULTIPOST_EXTENSION_PUBLISH_REQUEST_SYNC_DATA" }, async (response) => {

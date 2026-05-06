@@ -3,6 +3,9 @@ import { refreshAccountInfo, refreshAccountInfoMap } from "~sync/account";
 const KEEPALIVE_CONFIGS_KEY = "multipost_keepalive_configs";
 const KEEPALIVE_RUNTIME_KEY = "multipost_keepalive_runtime";
 const KEEPALIVE_ALARM_NAME = "multipost-keepalive";
+const PAGE_KEEPALIVE_KEYS = new Set(["weixinchannel"]);
+const PAGE_KEEPALIVE_LOAD_TIMEOUT_MS = 30_000;
+const PAGE_KEEPALIVE_STAY_MS = 8_000;
 
 const PLATFORM_TO_ACCOUNT_KEY: Record<string, string> = {
   DOUYIN: "douyin",
@@ -125,6 +128,77 @@ async function ensureKeepAliveAlarm() {
   });
 }
 
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function waitForTabComplete(tabId: number, timeoutMs = PAGE_KEEPALIVE_LOAD_TIMEOUT_MS) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (tab?.status === "complete") {
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      chrome.tabs.onUpdated.removeListener(handleUpdated);
+      chrome.tabs.onRemoved.removeListener(handleRemoved);
+    };
+
+    const handleUpdated = (updatedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
+      if (updatedTabId === tabId && changeInfo.status === "complete") {
+        cleanup();
+        resolve();
+      }
+    };
+
+    const handleRemoved = (removedTabId: number) => {
+      if (removedTabId === tabId) {
+        cleanup();
+        reject(new Error("保活页面已被关闭"));
+      }
+    };
+
+    timeoutId = setTimeout(() => {
+      cleanup();
+      reject(new Error("保活页面加载超时"));
+    }, timeoutMs);
+
+    chrome.tabs.onUpdated.addListener(handleUpdated);
+    chrome.tabs.onRemoved.addListener(handleRemoved);
+  });
+}
+
+async function runSilentPageKeepAlive(config: KeepAliveConfig, accountKey: string) {
+  const platformInfo = refreshAccountInfoMap[accountKey];
+  const keepAliveUrl = config.mainPage || platformInfo?.homeUrl;
+  if (!keepAliveUrl) {
+    throw new Error("未找到可用于保活的平台地址");
+  }
+
+  const tab = await chrome.tabs.create({
+    url: keepAliveUrl,
+    active: false,
+  });
+
+  if (!tab.id) {
+    throw new Error("创建保活页面失败");
+  }
+
+  try {
+    await waitForTabComplete(tab.id);
+    await delay(PAGE_KEEPALIVE_STAY_MS);
+  } finally {
+    await chrome.tabs.remove(tab.id).catch(() => undefined);
+  }
+}
+
 function buildStatusPayload(
   configs: Record<string, KeepAliveConfig>,
   runtimeState: Record<string, KeepAliveRuntimeState>,
@@ -180,6 +254,16 @@ async function runKeepAliveJob(config: KeepAliveConfig, reason: "manual" | "alar
   });
 
   try {
+    if (PAGE_KEEPALIVE_KEYS.has(extensionAccountKey)) {
+      await runSilentPageKeepAlive(config, extensionAccountKey);
+      await updateRuntimeState(config.accountId, {
+        running: true,
+        lastMessage: "已静默打开平台页面，正在校验登录状态",
+        extensionAccountKey,
+        supported: true,
+      });
+    }
+
     const accountInfo = await refreshAccountInfo(extensionAccountKey);
     const success = Boolean(accountInfo);
     const finishedAt = new Date().toISOString();

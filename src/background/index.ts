@@ -1,14 +1,15 @@
 import { getAllAccountInfo } from "~sync/account";
 import {
+  type PublishTabsResultItem,
   // injectScriptsToTabs,
   type SyncData,
-  type SyncDataPlatform,
   createTabsForPlatforms,
   getPlatformInfos,
 } from "~sync/common";
 import QuantumEntanglementKeepAlive from "../utils/keep-alive";
 import { linkExtensionMessageHandler, starter } from "./services/api";
 import { initKeepAliveService, keepAliveMessageHandler } from "./services/keepalive";
+import { initPublishAutoCloseService, publishAutoCloseMessageHandler } from "./services/publish-auto-close";
 import {
   addTabsManagerMessages,
   tabsManagerHandleTabRemoved,
@@ -31,6 +32,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   trustDomainMessageHandler(request, sender, sendResponse);
   linkExtensionMessageHandler(request, sender, sendResponse);
   keepAliveMessageHandler(request, sender, sendResponse);
+  publishAutoCloseMessageHandler(request, sender, sendResponse);
   return true;
 });
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
@@ -42,22 +44,33 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 // Listen Message || 监听消息 || END
 
 // Message Handler || 消息处理器 || START
-let currentSyncData: SyncData | null = null;
-let currentPublishPopup: chrome.windows.Window | null = null;
-const defaultMessageHandler = (request, _sender, sendResponse) => {
+interface PublishSession {
+  syncData: SyncData;
+  popupWindowId?: number;
+}
+
+const publishSessions = new Map<number, PublishSession>();
+
+function getSenderWindowId(sender: chrome.runtime.MessageSender): number | undefined {
+  return sender.tab?.windowId;
+}
+
+const defaultMessageHandler = (request, sender, sendResponse) => {
   if (request.action === "MULTIPOST_EXTENSION_CHECK_SERVICE_STATUS") {
     sendResponse({ extensionId: chrome.runtime.id });
   }
   if (request.action === "MULTIPOST_EXTENSION_PUBLISH") {
     const data = request.data as SyncData;
-    currentSyncData = data;
     (async () => {
-      currentPublishPopup = await chrome.windows.create({
+      const popupWindow = await chrome.windows.create({
         url: chrome.runtime.getURL("tabs/publish.html"),
         type: "popup",
         width: 800,
         height: 600,
       });
+      if (popupWindow.id) {
+        publishSessions.set(popupWindow.id, { syncData: data, popupWindowId: popupWindow.id });
+      }
     })();
   }
   if (request.action === "MULTIPOST_EXTENSION_PLATFORMS") {
@@ -84,50 +97,69 @@ const defaultMessageHandler = (request, _sender, sendResponse) => {
     });
   }
   if (request.action === "MULTIPOST_EXTENSION_PUBLISH_REQUEST_SYNC_DATA") {
-    sendResponse({ syncData: currentSyncData });
+    const windowId = getSenderWindowId(sender);
+    const session = windowId ? publishSessions.get(windowId) : undefined;
+    sendResponse({ syncData: session?.syncData || null });
   }
   if (request.action === "MULTIPOST_EXTENSION_PUBLISH_NOW") {
     const data = request.data as SyncData;
-    if (Array.isArray(data.platforms) && data.platforms.length > 0) {
-      (async () => {
-        try {
-          const tabs = await createTabsForPlatforms(data);
-          // await injectScriptsToTabs(tabs, data);
-
-          addTabsManagerMessages({
-            syncData: data,
-            tabs: tabs.map((t: { tab: chrome.tabs.Tab; platformInfo: SyncDataPlatform }) => ({
-              tab: t.tab,
-              platformInfo: t.platformInfo,
-            })),
-          });
-
-          // for (const t of tabs) {
-          //   if (t.tab.id) {
-          //     await chrome.tabs.update(t.tab.id, { active: true });
-          //     await new Promise((resolve) => setTimeout(resolve, 2000));
-          //   }
-          // }
-          if (currentPublishPopup) {
-            await chrome.windows.update(currentPublishPopup.id, { focused: true });
-          }
-
+    const windowId = getSenderWindowId(sender);
+    const session = windowId ? publishSessions.get(windowId) : undefined;
+    (async () => {
+      try {
+        if (!Array.isArray(data?.platforms) || data.platforms.length === 0) {
           sendResponse({
-            tabs: tabs.map((t: { tab: chrome.tabs.Tab; platformInfo: SyncDataPlatform }) => ({
-              tab: t.tab,
-              platformInfo: t.platformInfo,
-            })),
+            tabs: [],
+            publishWindowId: session?.popupWindowId,
+            groupId: undefined,
+            groupTitle: undefined,
+            tabsWindowId: undefined,
           });
-        } catch (error) {
-          console.error("创建标签页或分组时出错:", error);
+          return;
         }
-      })();
-    }
+
+        const publishTabsResult = await createTabsForPlatforms(data);
+
+        addTabsManagerMessages({
+          syncData: data,
+          tabs: publishTabsResult.tabs.map((t: PublishTabsResultItem) => ({
+            tab: t.tab,
+            platformInfo: t.platformInfo,
+          })),
+        });
+
+        if (session?.popupWindowId) {
+          await chrome.windows.update(session.popupWindowId, { focused: true });
+        }
+
+        sendResponse({
+          tabs: publishTabsResult.tabs.map((t: PublishTabsResultItem) => ({
+            tab: t.tab,
+            platformInfo: t.platformInfo,
+          })),
+          publishWindowId: session?.popupWindowId,
+          groupId: publishTabsResult.groupId,
+          groupTitle: publishTabsResult.groupTitle,
+          tabsWindowId: publishTabsResult.tabsWindowId,
+        });
+      } catch (error) {
+        console.error("创建标签页或分组时出错:", error);
+        sendResponse({
+          tabs: [],
+          publishWindowId: session?.popupWindowId,
+        });
+      }
+    })();
   }
 };
 starter(1000 * 30);
 initKeepAliveService();
+initPublishAutoCloseService();
 // Message Handler || 消息处理器 || END
+
+chrome.windows.onRemoved.addListener((windowId) => {
+  publishSessions.delete(windowId);
+});
 
 // Keep Alive || 保活机制 || START
 const quantumKeepAlive = new QuantumEntanglementKeepAlive();

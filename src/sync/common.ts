@@ -77,6 +77,18 @@ export interface PlatformInfo {
   extraConfig?: unknown;
 }
 
+export interface PublishTabsResultItem {
+  tab: chrome.tabs.Tab;
+  platformInfo: SyncDataPlatform;
+}
+
+export interface PublishTabsResult {
+  tabs: PublishTabsResultItem[];
+  groupId?: number;
+  groupTitle?: string;
+  tabsWindowId?: number;
+}
+
 export interface AccountInfo {
   provider: string;
   accountId: string;
@@ -117,9 +129,32 @@ export async function getPlatformInfos(type?: "DYNAMIC" | "VIDEO" | "ARTICLE" | 
 }
 
 // Inject || 注入 || START
-export async function createTabsForPlatforms(data: SyncData) {
-  const tabs: { tab: chrome.tabs.Tab; platformInfo: SyncDataPlatform }[] = [];
+export async function createTabsForPlatforms(data: SyncData): Promise<PublishTabsResult> {
+  const tabs: PublishTabsResultItem[] = [];
   let groupId: number | undefined;
+  let groupTitle: string | undefined;
+  let tabsWindowId: number | undefined;
+
+  const registerPublishTab = async (tab: chrome.tabs.Tab, platformInfo: SyncDataPlatform) => {
+    await injectScriptsToTabs([{ tab, platformInfo }], data);
+    await chrome.tabs.update(tab.id!, { active: true });
+    tabs.push({
+      tab,
+      platformInfo,
+    });
+    tabsWindowId ??= tab.windowId;
+
+    if (!groupId) {
+      groupId = await chrome.tabs.group({ tabIds: [tab.id!] });
+      groupTitle = `Astra-${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+      await chrome.tabGroups.update(groupId, {
+        color: "blue",
+        title: groupTitle,
+      });
+    } else {
+      await chrome.tabs.group({ tabIds: [tab.id!], groupId });
+    }
+  };
 
   for (const info of data.platforms) {
     let tab: chrome.tabs.Tab | null = null;
@@ -144,6 +179,11 @@ export async function createTabsForPlatforms(data: SyncData) {
               }
             });
           });
+
+          if (tab) {
+            await registerPublishTab(tab, info);
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+          }
         }
       } else {
         if (info.injectUrl) {
@@ -156,24 +196,7 @@ export async function createTabsForPlatforms(data: SyncData) {
         }
         // 等待标签页加载完成
         if (tab) {
-          await injectScriptsToTabs([{ tab, platformInfo: info }], data);
-          await chrome.tabs.update(tab.id!, { active: true });
-          tabs.push({
-            tab,
-            platformInfo: info,
-          });
-
-          // 如果是第一个标签页，创建一个新组
-          if (!groupId) {
-            groupId = await chrome.tabs.group({ tabIds: [tab.id!] });
-            await chrome.tabGroups.update(groupId, {
-              color: "blue",
-              title: `Astra-${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`,
-            });
-          } else {
-            // 将新标签页添加到现有组中
-            await chrome.tabs.group({ tabIds: [tab.id!], groupId });
-          }
+          await registerPublishTab(tab, info);
           // 等待3秒再继续，增加超时机制
           await new Promise<void>((resolve) => {
             const timeout = setTimeout(() => {
@@ -195,7 +218,12 @@ export async function createTabsForPlatforms(data: SyncData) {
     }
   }
 
-  return tabs;
+  return {
+    tabs,
+    groupId,
+    groupTitle,
+    tabsWindowId,
+  };
 }
 
 export async function injectScriptsToTabs(

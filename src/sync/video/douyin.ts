@@ -278,6 +278,10 @@ export async function VideoDouyin(data: SyncData) {
       await new Promise((resolve) => setTimeout(resolve, 3000));
     }
 
+    // 处理自主声明（先选择声明，再决定是否发布）
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await handleAiDeclaration();
+
     // 处理自动发布
     if (data.isAutoPublish) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -293,5 +297,76 @@ export async function VideoDouyin(data: SyncData) {
     }
   } catch (error) {
     console.error("DouyinVideo 发布过程中出错:", error);
+  }
+
+  async function handleAiDeclaration(): Promise<void> {
+    try {
+      console.log("设置自主声明...");
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      const selectorDiv = Array.from(document.querySelectorAll("div")).find(
+        (d) => d.textContent?.trim() === "请选择自主声明" && d.className.includes("selectText"),
+      ) as HTMLElement | undefined;
+
+      if (!selectorDiv) {
+        console.log("未找到自主声明选择器，可能已默认设置");
+        return;
+      }
+
+      console.log("点击「请选择自主声明」选择器");
+      selectorDiv.click();
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      const modal = await new Promise<Element | null>((resolve) => {
+        const existing = document.querySelector('div[class*="semi-modal-content"]');
+        if (existing) return resolve(existing);
+        const observer = new MutationObserver(() => {
+          const found = document.querySelector('div[class*="semi-modal-content"]');
+          if (found) {
+            observer.disconnect();
+            resolve(found);
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        setTimeout(() => {
+          observer.disconnect();
+          resolve(null);
+        }, 5000);
+      });
+
+      if (!modal) {
+        console.log("自主声明弹窗未出现");
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const radioLabel = Array.from(modal.querySelectorAll("label.semi-radio")).find((label) =>
+        label.textContent?.trim().includes("无需添加自主声明"),
+      ) as HTMLElement | undefined;
+
+      if (radioLabel) {
+        console.log("选择「无需添加自主声明」");
+        radioLabel.click();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      } else {
+        console.log("未找到「无需添加自主声明」选项");
+      }
+
+      const confirmButton = Array.from(modal.querySelectorAll("button")).find(
+        (button) => button.textContent?.trim() === "确定",
+      ) as HTMLElement | undefined;
+
+      if (confirmButton) {
+        console.log("点击「确定」按钮");
+        confirmButton.click();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      } else {
+        console.log("未找到「确定」按钮");
+      }
+    } catch (error) {
+      console.warn("处理自主声明时出错，不影响发布流程:", error);
+    }
   }
 }

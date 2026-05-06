@@ -8,7 +8,7 @@ export const config: PlasmoCSConfig = {
 };
 
 const storage = new Storage({ area: "local" });
-const ALLOWED_ORIGINS = ["localhost", "127.0.0.1"];
+const ALLOWED_ORIGINS = ["localhost", "127.0.0.1", "10.67.37.99"];
 
 function getRightAction(action: string) {
   if (action.startsWith("MUTLIPOST")) {
