@@ -97,12 +97,30 @@ export async function DynamicBaijiahao(data: SyncData) {
     console.debug("内容输入完成（已彻底清空）");
   }
 
-  // ✅ 上传图片（新版页面专用）
+  // ✅ 上传图片（新版页面：CSS Modules 类名加了 FeEditorApp- 前缀）
   async function uploadImages(images: any[]) {
     if (!images?.length) return;
 
-    // 1️⃣ 打开弹窗
-    const uploadBtn = (await waitForElement("._971503697980b5f9-wrap")) as HTMLElement;
+    // 1️⃣ 找到上传区域并点击（适配新版 CSS Modules 前缀）
+    // 新版 class: FeEditorApp-_971503697980b5f9-wrap
+    // 旧版 class: _971503697980b5f9-wrap
+    // 使用属性选择器匹配子串，兼容新旧版本
+    let uploadBtn = document.querySelector('[class*="_971503697980b5f9-wrap"]') as HTMLElement;
+
+    // 备选：通过 label 文本查找
+    if (!uploadBtn) {
+      const label = document.querySelector('label[title="上传图片"]');
+      if (label) {
+        const row = label.closest(".cheetah-row");
+        uploadBtn = row?.querySelector(".cheetah-form-item-control [class*='wrap']") as HTMLElement;
+      }
+    }
+
+    if (!uploadBtn) {
+      console.error("未找到图片上传按钮");
+      return;
+    }
+
     uploadBtn.click();
 
     await waitForElement(".cheetah-modal-content");
@@ -142,7 +160,7 @@ export async function DynamicBaijiahao(data: SyncData) {
     // ===== 等上传完成 =====
     let confirmBtn: HTMLButtonElement | null = null;
 
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 30; i++) {
       confirmBtn = document.querySelector(".cheetah-modal-footer button.cheetah-btn-primary") as HTMLButtonElement;
 
       if (confirmBtn && !confirmBtn.disabled) break;
@@ -150,7 +168,7 @@ export async function DynamicBaijiahao(data: SyncData) {
       await new Promise((r) => setTimeout(r, 1000));
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     if (confirmBtn && !confirmBtn.disabled) {
       confirmBtn.click();

@@ -129,30 +129,43 @@ export async function getPlatformInfos(type?: "DYNAMIC" | "VIDEO" | "ARTICLE" | 
 }
 
 // Inject || 注入 || START
-export async function createTabsForPlatforms(data: SyncData): Promise<PublishTabsResult> {
+export async function createTabsForPlatforms(data: SyncData, targetWindowId?: number): Promise<PublishTabsResult> {
   const tabs: PublishTabsResultItem[] = [];
   let groupId: number | undefined;
   let groupTitle: string | undefined;
   let tabsWindowId: number | undefined;
 
   const registerPublishTab = async (tab: chrome.tabs.Tab, platformInfo: SyncDataPlatform) => {
-    await injectScriptsToTabs([{ tab, platformInfo }], data);
-    await chrome.tabs.update(tab.id!, { active: true });
-    tabs.push({
-      tab,
-      platformInfo,
-    });
-    tabsWindowId ??= tab.windowId;
-
-    if (!groupId) {
-      groupId = await chrome.tabs.group({ tabIds: [tab.id!] });
-      groupTitle = `Astra-${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
-      await chrome.tabGroups.update(groupId, {
-        color: "blue",
-        title: groupTitle,
+    try {
+      await injectScriptsToTabs([{ tab, platformInfo }], data);
+      tabs.push({
+        tab,
+        platformInfo,
       });
-    } else {
-      await chrome.tabs.group({ tabIds: [tab.id!], groupId });
+      tabsWindowId ??= tab.windowId;
+
+      if (!groupId) {
+        groupId = await chrome.tabs.group({ tabIds: [tab.id!] });
+        groupTitle = `Astra-${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+        await chrome.tabGroups.update(groupId, {
+          color: "blue",
+          title: groupTitle,
+        });
+      } else {
+        await chrome.tabs.group({ tabIds: [tab.id!], groupId });
+      }
+    } catch (error) {
+      console.error(`注册发布标签页失败 (tab: ${tab.id}, platform: ${platformInfo.name}):`, error);
+      // 仍然尝试记录 tab 和分组，最佳努力
+      tabs.push({ tab, platformInfo });
+      tabsWindowId ??= tab.windowId;
+      if (groupId && tab.id) {
+        try {
+          await chrome.tabs.group({ tabIds: [tab.id!], groupId });
+        } catch {
+          // 分组也失败则放弃
+        }
+      }
     }
   };
 
@@ -162,7 +175,7 @@ export async function createTabsForPlatforms(data: SyncData): Promise<PublishTab
       const extraConfig = info.extraConfig as { customInjectUrls?: string[] };
       if (extraConfig?.customInjectUrls && extraConfig.customInjectUrls.length > 0) {
         for (const url of extraConfig.customInjectUrls) {
-          tab = await chrome.tabs.create({ url });
+          tab = await chrome.tabs.create({ url, windowId: targetWindowId });
           info.injectUrl = url;
           // 等待标签页加载完成，增加超时机制
           await new Promise<void>((resolve) => {
@@ -187,17 +200,15 @@ export async function createTabsForPlatforms(data: SyncData): Promise<PublishTab
         }
       } else {
         if (info.injectUrl) {
-          tab = await chrome.tabs.create({ url: info.injectUrl });
+          tab = await chrome.tabs.create({ url: info.injectUrl, windowId: targetWindowId });
         } else {
           const platformInfo = infoMap[info.name];
           if (platformInfo) {
-            tab = await chrome.tabs.create({ url: platformInfo.injectUrl });
+            tab = await chrome.tabs.create({ url: platformInfo.injectUrl, windowId: targetWindowId });
           }
         }
-        // 等待标签页加载完成
         if (tab) {
-          await registerPublishTab(tab, info);
-          // 等待3秒再继续，增加超时机制
+          // 等待标签页加载完成，增加超时机制
           await new Promise<void>((resolve) => {
             const timeout = setTimeout(() => {
               console.warn(`Tab ${tab?.id} loading timed out after 30s`);
@@ -212,9 +223,20 @@ export async function createTabsForPlatforms(data: SyncData): Promise<PublishTab
               }
             });
           });
+          await registerPublishTab(tab, info);
           await new Promise((resolve) => setTimeout(resolve, 3000));
         }
       }
+    }
+  }
+
+  // 所有标签页创建完成后，激活最后一个标签页
+  const lastTab = tabs[tabs.length - 1];
+  if (lastTab?.tab?.id) {
+    try {
+      await chrome.tabs.update(lastTab.tab.id, { active: true });
+    } catch {
+      // 标签页可能已关闭
     }
   }
 
@@ -234,6 +256,26 @@ export async function injectScriptsToTabs(
     const tab = t.tab;
     const platform = t.platformInfo;
     if (tab.id) {
+      // 先检查 Tab 是否已经加载完成，是则直接注入，否则注册监听器
+      try {
+        const currentTab = await chrome.tabs.get(tab.id);
+        if (currentTab.status === "complete") {
+          const info = await getPlatformInfo(platform.name);
+          if (info) {
+            await chrome.scripting.executeScript({
+              target: { tabId: tab.id },
+              func: info.injectFunction,
+              args: [data],
+            });
+          }
+          continue;
+        }
+      } catch {
+        // Tab 可能已关闭
+        continue;
+      }
+
+      // Tab 还在加载中，等待完成后注入
       chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
         if (tabId === tab.id && info.status === "complete") {
           chrome.tabs.onUpdated.removeListener(listener);

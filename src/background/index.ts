@@ -50,6 +50,7 @@ interface PublishSession {
 }
 
 const publishSessions = new Map<number, PublishSession>();
+let isPublishInProgress = false;
 
 function getSenderWindowId(sender: chrome.runtime.MessageSender): number | undefined {
   return sender.tab?.windowId;
@@ -60,16 +61,29 @@ const defaultMessageHandler = (request, sender, sendResponse) => {
     sendResponse({ extensionId: chrome.runtime.id });
   }
   if (request.action === "MULTIPOST_EXTENSION_PUBLISH") {
+    if (isPublishInProgress) {
+      console.warn("发布任务正在执行中，拒绝新的发布请求");
+      sendResponse({ error: "PUBLISH_IN_PROGRESS", message: "发布任务正在执行中，请稍后重试" });
+      return;
+    }
+    isPublishInProgress = true;
     const data = request.data as SyncData;
     (async () => {
-      const popupWindow = await chrome.windows.create({
-        url: chrome.runtime.getURL("tabs/publish.html"),
-        type: "popup",
-        width: 800,
-        height: 600,
-      });
-      if (popupWindow.id) {
-        publishSessions.set(popupWindow.id, { syncData: data, popupWindowId: popupWindow.id });
+      try {
+        const popupWindow = await chrome.windows.create({
+          url: chrome.runtime.getURL("tabs/publish.html"),
+          type: "popup",
+          width: 800,
+          height: 600,
+        });
+        if (popupWindow.id) {
+          publishSessions.set(popupWindow.id, { syncData: data, popupWindowId: popupWindow.id });
+        }
+        sendResponse({ ok: true });
+      } catch (error) {
+        console.error("创建发布窗口失败:", error);
+        isPublishInProgress = false;
+        sendResponse({ error: "CREATE_WINDOW_FAILED", message: "创建发布窗口失败" });
       }
     })();
   }
@@ -105,6 +119,7 @@ const defaultMessageHandler = (request, sender, sendResponse) => {
     const data = request.data as SyncData;
     const windowId = getSenderWindowId(sender);
     const session = windowId ? publishSessions.get(windowId) : undefined;
+
     (async () => {
       try {
         if (!Array.isArray(data?.platforms) || data.platforms.length === 0) {
@@ -118,7 +133,13 @@ const defaultMessageHandler = (request, sender, sendResponse) => {
           return;
         }
 
-        const publishTabsResult = await createTabsForPlatforms(data);
+        // 找到主窗口，确保所有标签页创建在同一个普通窗口中
+        const windows = await chrome.windows.getAll();
+        const mainWindow =
+          windows.find((w) => w.type === "normal" && w.focused) || windows.find((w) => w.type === "normal");
+        const targetWindowId = mainWindow?.id;
+
+        const publishTabsResult = await createTabsForPlatforms(data, targetWindowId);
 
         addTabsManagerMessages({
           syncData: data,
@@ -148,6 +169,8 @@ const defaultMessageHandler = (request, sender, sendResponse) => {
           tabs: [],
           publishWindowId: session?.popupWindowId,
         });
+      } finally {
+        isPublishInProgress = false;
       }
     })();
   }
@@ -158,6 +181,9 @@ initPublishAutoCloseService();
 // Message Handler || 消息处理器 || END
 
 chrome.windows.onRemoved.addListener((windowId) => {
+  if (publishSessions.has(windowId)) {
+    isPublishInProgress = false;
+  }
   publishSessions.delete(windowId);
 });
 

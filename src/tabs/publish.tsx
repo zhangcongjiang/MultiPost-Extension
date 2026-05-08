@@ -178,13 +178,15 @@ export default function Publish() {
 
   const processDynamic = async (data: SyncData) => {
     setNotice(chrome.i18n.getMessage("processingContent"));
-    const { images = [], videos = [] } = data.data as DynamicData;
+    const { images: rawImages = [], videos = [] } = data.data as DynamicData;
+    // 动态发布最多只携带9张图片，选择前9张
+    const images = Array.isArray(rawImages) ? rawImages.slice(0, 9) : [];
 
     const processedImages: FileData[] = [];
     const processedVideos: FileData[] = [];
 
     // 确保 images 是可迭代的数组
-    if (Array.isArray(images) && images.length > 0) {
+    if (images.length > 0) {
       for (const image of images) {
         setNotice(chrome.i18n.getMessage("errorProcessImage", [image.name]));
         processedImages.push(await processFile(image));

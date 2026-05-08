@@ -11,6 +11,7 @@
 
 # production
 /build
+/superpowers
 
 # script
 /script/*.sh
