@@ -155,6 +155,78 @@ export async function VideoBaijiahao(data: SyncData) {
     console.log("封面上传完成（双封面）");
   }
 
+  // ===== 选择创作声明 =====
+  async function selectCreationDeclaration() {
+    try {
+      const declareInput = document.querySelector('input[placeholder="请选择创作声明"]') as HTMLInputElement | null;
+      if (!declareInput) {
+        console.log("未找到创作声明输入框，跳过");
+        return;
+      }
+
+      declareInput.click();
+      console.log("点击创作声明输入框");
+      await new Promise((r) => setTimeout(r, 3000));
+
+      // 从创作声明弹窗标题出发，向上找到整个弹窗容器，再向下找 radio
+      const allTitles = document.querySelectorAll("div.cheetah-modal-title");
+      let modalContainer: Element | null = null;
+      for (const title of allTitles) {
+        if (title.textContent?.trim() === "创作声明") {
+          // 向上找到 .cheetah-modal-content 容器
+          modalContainer = title.closest(".cheetah-modal-content");
+          break;
+        }
+      }
+
+      if (!modalContainer) {
+        console.log("未找到创作声明弹窗容器");
+        return;
+      }
+
+      // 在弹窗容器内查找所有 radio input（用宽泛选择器）
+      const radioInputs = modalContainer.querySelectorAll('input[type="radio"]');
+      console.log("创作声明 radio 数量:", radioInputs.length);
+
+      let selected = false;
+      for (const radio of radioInputs) {
+        // 向上查找到包含文字的最近 div 容器
+        const container = radio.closest("div.cursor-pointer") || radio.closest("div.flex");
+        const text = container?.textContent?.trim() || "";
+        if (text.includes("无需声明")) {
+          // React 兼容：先设 checked 再触发 click
+          const nativeCheckedSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked")?.set;
+          if (nativeCheckedSetter) {
+            nativeCheckedSetter.call(radio, true);
+          }
+          radio.dispatchEvent(new Event("click", { bubbles: true }));
+          console.log("选择创作声明: 无需声明");
+          selected = true;
+          break;
+        }
+      }
+
+      if (!selected) {
+        console.log("未匹配到无需声明选项");
+      }
+
+      await new Promise((r) => setTimeout(r, 800));
+
+      // 点击弹窗确定按钮
+      const confirmBtn = Array.from(modalContainer.querySelectorAll("button")).find(
+        (btn) => btn.textContent?.trim() === "确定",
+      ) as HTMLButtonElement | undefined;
+      if (confirmBtn) {
+        confirmBtn.click();
+        console.log("点击创作声明确定按钮");
+      }
+
+      await new Promise((r) => setTimeout(r, 1000));
+    } catch (e) {
+      console.log("创作声明选择失败，继续发布流程:", e);
+    }
+  }
+
   try {
     const { content, video, title, tags, cover, verticalCover } = data.data as VideoData;
 
@@ -183,6 +255,9 @@ export async function VideoBaijiahao(data: SyncData) {
     }
 
     await new Promise((r) => setTimeout(r, 2500));
+
+    // ===== 创作声明 =====
+    await selectCreationDeclaration();
 
     // ===== 发布 =====
     if (data.isAutoPublish) {

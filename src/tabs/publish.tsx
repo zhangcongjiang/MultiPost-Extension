@@ -22,7 +22,7 @@ const storage = new Storage({
 const AUTO_CLOSE_KEY = "publish-auto-close";
 const AUTO_CLOSE_DELAY_KEY = "publish-auto-close-delay";
 const SYNC_CLOSE_TABS_KEY = "publish-sync-close-tabs";
-const DEFAULT_AUTO_CLOSE_DELAY = 3 * 60; // 3 minutes in seconds
+const DEFAULT_AUTO_CLOSE_DELAY = 30; // 30 seconds
 const REGISTER_PUBLISH_AUTO_CLOSE_ACTION = "MULTIPOST_EXTENSION_REGISTER_PUBLISH_AUTO_CLOSE";
 const CANCEL_PUBLISH_AUTO_CLOSE_ACTION = "MULTIPOST_EXTENSION_CANCEL_PUBLISH_AUTO_CLOSE";
 
@@ -419,10 +419,9 @@ export default function Publish() {
   };
 
   const handleDelayChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const minutes = Number.parseInt(event.target.value);
-    if (Number.isNaN(minutes) || minutes < 1) return;
+    const seconds = Number.parseInt(event.target.value);
+    if (Number.isNaN(seconds) || seconds < 1) return;
 
-    const seconds = minutes * 60;
     setAutoCloseDelay(seconds);
     autoCloseDelayRef.current = seconds;
     await storage.set(AUTO_CLOSE_DELAY_KEY, String(seconds));
@@ -744,13 +743,12 @@ export default function Publish() {
                       size="sm"
                       variant="underlined"
                       min="1"
-                      max="30"
-                      // defaultValue={Math.floor(autoCloseDelay / 60)}
-                      value={Math.floor(autoCloseDelay / 60)}
+                      max="600"
+                      value={autoCloseDelay}
                       onChange={(e) => handleDelayChange(e)}
                       className="w-14"
                     />
-                    <span className="text-xs text-gray-500">min</span>
+                    <span className="text-xs text-gray-500">s</span>
                   </div>
                 )}
               </div>
